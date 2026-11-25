@@ -157,6 +157,8 @@ SENSOR_DESCRIPTIONS: tuple[JunteksSensorEntityDescription, ...] = (
     JunteksSensorEntityDescription(
         key="current_direction",
         translation_key="current_direction",
+        device_class=SensorDeviceClass.ENUM,
+        options=["charging", "discharging", "idle"],
         icon="mdi:swap-horizontal",
         value_fn=lambda d: d.direction,
     ),

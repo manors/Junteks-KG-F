@@ -30,7 +30,14 @@
       "remaining_time": { "name": "续航时间" },
       "internal_resistance": { "name": "电池内阻" },
       "output_state": { "name": "输出状态" },
-      "current_direction": { "name": "电流方向" },
+      "current_direction": {
+        "name": "电流方向",
+        "state": {
+          "charging": "充电",
+          "discharging": "放电",
+          "idle": "静置"
+        }
+      },
       "protocol_mode": { "name": "通讯协议模式" }
     }
   }

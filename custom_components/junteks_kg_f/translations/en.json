@@ -30,7 +30,14 @@
       "remaining_time": { "name": "Remaining Time" },
       "internal_resistance": { "name": "Internal Resistance" },
       "output_state": { "name": "Output State" },
-      "current_direction": { "name": "Current Direction" },
+      "current_direction": {
+        "name": "Current Direction",
+        "state": {
+          "charging": "Charging",
+          "discharging": "Discharging",
+          "idle": "Idle"
+        }
+      },
       "protocol_mode": { "name": "Protocol Mode" }
     }
   }

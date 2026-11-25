@@ -35,6 +35,7 @@ class JunteksData:
     current_a: float | None = None
     current_abs_a: float | None = None
     power_w: float | None = None
+    power_abs_w: float | None = None
 
     remaining_capacity_ah: float | None = None
     preset_capacity_ah: float | None = None
@@ -65,12 +66,30 @@ class JunteksData:
     extra_tags: dict[int, int] = field(default_factory=dict)
 
     def update_derived(self) -> None:
-        """Update derived fields such as SOC and signed current."""
+        """Update derived fields such as SOC, signed current/power, and direction."""
+        # Charging (direction_code == 1) is positive; discharging (direction_code == 0) is negative.
         if self.current_abs_a is not None:
-            if self.direction_code == 1:
+            if self.current_abs_a == 0:
+                self.current_a = 0.0
+                self.direction = "idle"
+            elif self.direction_code == 1:
+                self.current_a = self.current_abs_a
+                self.direction = "charging"
+            elif self.direction_code == 0:
                 self.current_a = -self.current_abs_a
+                self.direction = "discharging"
             else:
                 self.current_a = self.current_abs_a
+
+        if self.power_abs_w is not None:
+            if self.current_abs_a == 0 or self.power_abs_w == 0:
+                self.power_w = 0.0
+            elif self.direction_code == 1:
+                self.power_w = self.power_abs_w
+            elif self.direction_code == 0:
+                self.power_w = -self.power_abs_w
+            else:
+                self.power_w = self.power_abs_w
 
         if (
             self.remaining_capacity_ah is not None
@@ -219,7 +238,7 @@ class JunteksProtocolParser:
         elif tag == 215:  # 0xD7: Battery internal resistance (mOhm)
             d.internal_resistance_mohm = val / 100.0
         elif tag == 216:  # 0xD8: Power
-            d.power_w = val / 100.0
+            d.power_abs_w = val / 100.0
         elif tag == 217:  # 0xD9: External temperature
             temp = val - 100
             d.temperature_c = None if temp < -20 else float(temp)
@@ -305,7 +324,7 @@ class JunteksProtocolParser:
             d.direction = CURRENT_DIRECTIONS.get(vals[9], f"unknown({vals[9]})")
             d.remaining_time_min = vals[10]
             d.internal_resistance_mohm = vals[11] / 100.0
-            d.power_w = round(d.voltage_v * d.current_abs_a, 2)
+            d.power_abs_w = round(d.voltage_v * d.current_abs_a, 2)
             d.update_derived()
             return "ascii_r50"
 

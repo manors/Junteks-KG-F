@@ -33,7 +33,8 @@ OUTPUT_STATES = {
 }
 
 # Current direction mapping (Tag 0xD1 / :r50[11])
+# Manual: 0 = forward (discharging), 1 = reverse (charging)
 CURRENT_DIRECTIONS = {
-    0: "forward",
-    1: "reverse",
+    0: "discharging",
+    1: "charging",
 }
