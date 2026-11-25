@@ -38,7 +38,28 @@
           "idle": "Idle"
         }
       },
-      "protocol_mode": { "name": "Protocol Mode" }
+      "protocol_mode": { "name": "Protocol Mode" },
+      "device_address": { "name": "Device Address" },
+      "ovp": { "name": "Over Voltage Protection (OVP)" },
+      "lvp": { "name": "Low Voltage Protection (LVP)" },
+      "ocp": { "name": "Discharge Over Current Protection (OCP)" },
+      "ncp": { "name": "Charge Over Current Protection (NCP)" },
+      "opp": { "name": "Over Power Protection (OPP)" },
+      "otp": { "name": "Over Temperature Protection (OTP)" },
+      "ltp": { "name": "Low Temperature Protection (LTP)" },
+      "protect_revert_time": { "name": "Protection Revert Time" },
+      "delay_time": { "name": "Protection Delay Time" },
+      "relay_mode": {
+        "name": "Relay Mode",
+        "state": {
+          "normally_open": "Normally Open",
+          "normally_closed": "Normally Closed"
+        }
+      },
+      "full_voltage": { "name": "Full Charge Voltage" },
+      "low_voltage": { "name": "Empty Battery Voltage" },
+      "full_current": { "name": "Full Charge Current Ratio" },
+      "detect_time": { "name": "Full/Empty Detect Time" }
     }
   }
 }

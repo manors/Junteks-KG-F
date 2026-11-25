@@ -61,6 +61,13 @@ class JunteksData:
     opp_w: float | None = None
     otp_c: int | None = None
     ltp_c: int | None = None
+    protect_revert_time_s: int | None = None
+    delay_time_s: int | None = None
+    relay_mode: str | None = None
+    full_voltage_v: float | None = None
+    low_voltage_v: float | None = None
+    full_current_pct: float | None = None
+    detect_time_min: float | None = None
 
     last_raw_hex: str | None = None
     extra_tags: dict[int, int] = field(default_factory=dict)
@@ -202,11 +209,18 @@ class JunteksProtocolParser:
         if tag == 176:  # 0xB0: Preset battery capacity
             d.preset_capacity_ah = val / 10.0
         elif tag == 177:  # 0xB1: Over-temperature protection
-            d.otp_c = val - 100
+            otp = val - 100
+            d.otp_c = None if otp < -20 else otp
+        elif tag == 183:  # 0xB7: Relay mode (0=NO, 1=NC)
+            d.relay_mode = "normally_closed" if val == 1 else "normally_open"
         elif tag == 192:  # 0xC0: Voltage
             d.voltage_v = val / 100.0
         elif tag == 193:  # 0xC1: Current
             d.current_abs_a = val / 100.0
+        elif tag == 194:  # 0xC2: Delay time (s)
+            d.delay_time_s = val
+        elif tag == 195:  # 0xC3: Protection revert time (s)
+            d.protect_revert_time_s = val
         elif tag == 196:  # 0xC4: Address
             d.device_address = val
         elif tag == 197:  # 0xC5: OVP
@@ -251,7 +265,16 @@ class JunteksProtocolParser:
         elif tag == 226:  # 0xE2: Firmware version
             d.firmware_version = val / 100.0
         elif tag == 227:  # 0xE3: Low-temperature protection
-            d.ltp_c = val - 100
+            ltp = val - 100
+            d.ltp_c = None if ltp < -20 else ltp
+        elif tag == 230:  # 0xE6: Full voltage (V)
+            d.full_voltage_v = val / 100.0
+        elif tag == 231:  # 0xE7: Low voltage (V)
+            d.low_voltage_v = val / 100.0
+        elif tag == 232:  # 0xE8: Full current (%)
+            d.full_current_pct = val / 10.0
+        elif tag == 233:  # 0xE9: Detect time (min)
+            d.detect_time_min = val / 10.0
         else:
             d.extra_tags[tag] = val
 
@@ -334,8 +357,13 @@ class JunteksProtocolParser:
             d.ocp_a = vals[2] / 100.0
             d.ncp_a = vals[3] / 100.0
             d.opp_w = vals[4] / 100.0
-            d.otp_c = vals[5] - 100
+            otp = vals[5] - 100
+            d.otp_c = None if otp < -20 else otp
+            d.protect_revert_time_s = vals[6]
+            d.delay_time_s = vals[7]
             d.preset_capacity_ah = vals[8] / 10.0
+            if len(vals) >= 14:
+                d.relay_mode = "normally_closed" if vals[13] == 1 else "normally_open"
             d.update_derived()
             return "ascii_r51"
 

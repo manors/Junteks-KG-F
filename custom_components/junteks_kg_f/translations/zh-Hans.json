@@ -38,7 +38,28 @@
           "idle": "静置"
         }
       },
-      "protocol_mode": { "name": "通讯协议模式" }
+      "protocol_mode": { "name": "通讯协议模式" },
+      "device_address": { "name": "设备通讯地址" },
+      "ovp": { "name": "过压保护 (OVP)" },
+      "lvp": { "name": "欠压保护 (LVP)" },
+      "ocp": { "name": "放电过流保护 (OCP)" },
+      "ncp": { "name": "充电过流保护 (NCP)" },
+      "opp": { "name": "过功率保护 (OPP)" },
+      "otp": { "name": "过温保护 (OTP)" },
+      "ltp": { "name": "低温保护 (LTP)" },
+      "protect_revert_time": { "name": "保护恢复时间" },
+      "delay_time": { "name": "保护延迟时间" },
+      "relay_mode": {
+        "name": "继电器类型",
+        "state": {
+          "normally_open": "常开",
+          "normally_closed": "常闭"
+        }
+      },
+      "full_voltage": { "name": "满电电压" },
+      "low_voltage": { "name": "亏电电压" },
+      "full_current": { "name": "满电电流比例" },
+      "detect_time": { "name": "满电/亏电检测时间" }
     }
   }
 }
