@@ -15,6 +15,17 @@
       "already_configured": "该设备已经配置过了"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Junteks KG-F 参数配置",
+        "description": "限制向 Home Assistant 推送传感器更新的最小间隔，以降低数据库写入频率和 CPU 占用。",
+        "data": {
+          "scan_interval": "最小刷新间隔（秒，1–3600）"
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "voltage": { "name": "电压" },

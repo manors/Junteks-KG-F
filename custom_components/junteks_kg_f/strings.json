@@ -15,6 +15,17 @@
       "already_configured": "Device is already configured"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Junteks KG-F Options",
+        "description": "Limit how frequently sensor updates are pushed to Home Assistant to reduce database writes and CPU usage.",
+        "data": {
+          "scan_interval": "Minimum update interval (seconds, 1-3600)"
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "voltage": { "name": "Voltage" },

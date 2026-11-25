@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+import time
 
 from bleak import BleakClient
 from bleak.exc import BleakError
@@ -23,6 +24,8 @@ from .const import (
     ASCII_CMD_READ_SETTINGS,
     CHAR_NOTIFY_UUID,
     CHAR_WRITE_UUID,
+    CONF_SCAN_INTERVAL,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     HANDSHAKE_CMD_BINARY,
 )
@@ -36,7 +39,10 @@ PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.BUTTON]
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Junteks KG-F from a config entry."""
     address: str = entry.data[CONF_ADDRESS]
-    coordinator = JunteksCoordinator(hass, address)
+    scan_interval: int = entry.options.get(
+        CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+    )
+    coordinator = JunteksCoordinator(hass, address, scan_interval)
 
     try:
         await coordinator.async_config_entry_first_refresh()
@@ -45,8 +51,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _async_options_updated(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Update coordinator interval when options change without reconnecting."""
+    coordinator: JunteksCoordinator = hass.data[DOMAIN][entry.entry_id]
+    scan_interval: int = entry.options.get(
+        CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+    )
+    coordinator.set_scan_interval(scan_interval)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -61,18 +79,31 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 class JunteksCoordinator(DataUpdateCoordinator[JunteksData]):
     """Manage BLE connection and data parsing for Junteks KG-F."""
 
-    def __init__(self, hass: HomeAssistant, address: str) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        address: str,
+        scan_interval: int = DEFAULT_SCAN_INTERVAL,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}_{address}",
-            update_interval=timedelta(seconds=10),
+            update_interval=timedelta(seconds=max(10, scan_interval)),
         )
         self.address = address
         self.parser = JunteksProtocolParser()
         self._client: BleakClient | None = None
         self._connect_lock = asyncio.Lock()
         self._rx_event = asyncio.Event()
+        self._min_push_interval = scan_interval
+        self._last_push_time = 0.0
+
+    def set_scan_interval(self, scan_interval: int) -> None:
+        """Update the minimum state push / poll interval in seconds."""
+        self._min_push_interval = scan_interval
+        self.update_interval = timedelta(seconds=max(10, scan_interval))
+        _LOGGER.debug("Updated scan_interval to %ss", scan_interval)
 
     @callback
     def _on_disconnected(self, client: BleakClient) -> None:
@@ -86,7 +117,10 @@ class JunteksCoordinator(DataUpdateCoordinator[JunteksData]):
         events = self.parser.feed(bytes(data))
         if events:
             self._rx_event.set()
-            self.async_set_updated_data(self.parser.data)
+            now = time.monotonic()
+            if now - self._last_push_time >= self._min_push_interval:
+                self._last_push_time = now
+                self.async_set_updated_data(self.parser.data)
 
     async def _ensure_connected(self) -> BleakClient:
         """Ensure BLE connection is active and notifications are subscribed."""
@@ -183,6 +217,7 @@ class JunteksCoordinator(DataUpdateCoordinator[JunteksData]):
             else binary_cmd
         )
         _LOGGER.debug("BLE TX (%d bytes): %s", len(cmd), cmd.hex(" ").upper())
+        self._last_push_time = 0.0
         await client.write_gatt_char(CHAR_WRITE_UUID, cmd, response=False)
         await asyncio.sleep(0.2)
         await self.async_request_refresh()
