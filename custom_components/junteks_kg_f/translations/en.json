@@ -60,6 +60,13 @@
       "low_voltage": { "name": "Empty Battery Voltage" },
       "full_current": { "name": "Full Charge Current Ratio" },
       "detect_time": { "name": "Full/Empty Detect Time" }
+    },
+    "switch": {
+      "output": { "name": "Output & Data Recording" }
+    },
+    "button": {
+      "zero_current": { "name": "Zero Current" },
+      "clear_data": { "name": "Clear Accumulated Data" }
     }
   }
 }

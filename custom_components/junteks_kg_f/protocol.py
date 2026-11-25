@@ -21,6 +21,25 @@ def dec_to_bcd_byte(dec_val: int) -> int:
     return ((dec_val // 10) << 4) | (dec_val % 10)
 
 
+def int_to_bcd_bytes(val: int) -> bytes:
+    """Convert a non-negative integer to big-endian BCD bytes (2 digits per byte)."""
+    if val <= 0:
+        return b"\x00"
+    parts: list[int] = []
+    while val > 0:
+        parts.append(dec_to_bcd_byte(val % 100))
+        val //= 100
+    parts.reverse()
+    return bytes(parts)
+
+
+def build_binary_command(value: int, tag: int) -> bytes:
+    """Build a binary BCD write command frame: [0xBB, BCD(value), tag, chk, 0xEE]."""
+    body = bytes([0xBB]) + int_to_bcd_bytes(value) + bytes([tag])
+    chk = dec_to_bcd_byte(sum(body) % 100)
+    return body + bytes([chk, 0xEE])
+
+
 @dataclass
 class JunteksData:
     """Parsed data state from the Junteks KG-F meter."""

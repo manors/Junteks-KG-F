@@ -30,7 +30,7 @@ from .protocol import JunteksData, JunteksProtocolParser
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.BUTTON]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -173,6 +173,19 @@ class JunteksCoordinator(DataUpdateCoordinator[JunteksData]):
             raise UpdateFailed(f"BLE communication error: {err}") from err
 
         return self.parser.data
+
+    async def async_send_command(self, binary_cmd: bytes, ascii_cmd: bytes) -> None:
+        """Send a control command to the device using the active protocol."""
+        client = await self._ensure_connected()
+        cmd = (
+            ascii_cmd
+            if self.parser.data.protocol_mode == "ascii"
+            else binary_cmd
+        )
+        _LOGGER.debug("BLE TX (%d bytes): %s", len(cmd), cmd.hex(" ").upper())
+        await client.write_gatt_char(CHAR_WRITE_UUID, cmd, response=False)
+        await asyncio.sleep(0.2)
+        await self.async_request_refresh()
 
     async def async_shutdown(self) -> None:
         """Disconnect cleanly on unload."""

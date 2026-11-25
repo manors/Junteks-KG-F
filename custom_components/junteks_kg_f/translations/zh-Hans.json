@@ -60,6 +60,13 @@
       "low_voltage": { "name": "亏电电压" },
       "full_current": { "name": "满电电流比例" },
       "detect_time": { "name": "满电/亏电检测时间" }
+    },
+    "switch": {
+      "output": { "name": "输出与数据记录开关" }
+    },
+    "button": {
+      "zero_current": { "name": "电流归零" },
+      "clear_data": { "name": "累计数据清零" }
     }
   }
 }

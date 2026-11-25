@@ -9,14 +9,18 @@ Home Assistant custom integration for **Junteks KG-F series** (KG110F / KG140F /
   - **Binary BCD Protocol** (default, active push from newer firmware)
   - **ASCII RS485 Passthrough Protocol** (automatic fallback for older firmware)
 - **Sensors**:
-  - Voltage (V), Current (A), Power (W)
+  - Voltage (V), Current (A, `+` charging / `-` discharging), Power (W, `+` charging / `-` discharging)
   - Battery Level / SOC (%), Remaining Capacity (Ah), Preset Capacity (Ah)
   - Cumulative Capacity (Ah), Energy (kWh)
   - External Temperature (°C)
   - Runtime (s), Remaining Time (min), Internal Resistance (mΩ)
   - Output / Protection State (`ON`, `OFF`, `OVP`, `OCP`, `LVP`, `NCP`, `OPP`, `OTP`)
-  - Current Direction (`forward`, `reverse`)
-  - Protocol Mode (`binary` / `ascii`, diagnostic)
+  - Current Direction (`charging`, `discharging`, `idle`)
+  - Protection & Extended Diagnostics (`OVP`, `LVP`, `OCP`, `NCP`, `OPP`, `OTP`, `LTP`, revert/delay time, relay mode, full/low voltage, full current ratio, detect time, device address, protocol mode)
+- **Controls**:
+  - Output & Data Recording Switch
+  - Zero Current Button
+  - Clear Accumulated Data Button
 
 ## Installation
 
