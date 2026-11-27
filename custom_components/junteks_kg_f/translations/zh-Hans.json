@@ -19,11 +19,15 @@
     "step": {
       "init": {
         "title": "Junteks KG-F 参数配置",
-        "description": "限制向 Home Assistant 推送传感器更新的最小间隔，以降低数据库写入频率和 CPU 占用。",
+        "description": "默认采用“按需短连接”：仅在刷新时连接并在收齐数据后立即释放，手机 App 随时可连（为保护 ESP32，短连接最小间隔为 15 秒）。如需 1–14 秒高频实时刷新，请开启“保持蓝牙长连接”。",
         "data": {
-          "scan_interval": "最小刷新间隔（秒，1–3600）"
+          "scan_interval": "刷新间隔（秒，1–3600）",
+          "keep_connected": "保持蓝牙长连接（开启后手机 App 将无法同时连接）"
         }
       }
+    },
+    "error": {
+      "interval_too_short": "按需短连接模式下间隔不能小于 15 秒（防止高频建连/断连拖垮 ESP32）。如需更短间隔，请开启“保持蓝牙长连接”。"
     }
   },
   "entity": {

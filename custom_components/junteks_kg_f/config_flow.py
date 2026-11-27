@@ -19,7 +19,14 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import callback
 
-from .const import CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import (
+    CONF_KEEP_CONNECTED,
+    CONF_SCAN_INTERVAL,
+    DEFAULT_KEEP_CONNECTED,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    MIN_SHORT_CONN_INTERVAL,
+)
 
 
 class JunteksConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -118,17 +125,29 @@ class JunteksOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            keep_connected = user_input[CONF_KEEP_CONNECTED]
+            scan_interval = user_input[CONF_SCAN_INTERVAL]
+            if not keep_connected and scan_interval < MIN_SHORT_CONN_INTERVAL:
+                errors[CONF_SCAN_INTERVAL] = "interval_too_short"
+            else:
+                return self.async_create_entry(title="", data=user_input)
 
         current_interval = self.config_entry.options.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+        )
+        current_keep = self.config_entry.options.get(
+            CONF_KEEP_CONNECTED, DEFAULT_KEEP_CONNECTED
         )
         schema = vol.Schema(
             {
                 vol.Required(CONF_SCAN_INTERVAL, default=current_interval): vol.All(
                     vol.Coerce(int), vol.Range(min=1, max=3600)
                 ),
+                vol.Required(CONF_KEEP_CONNECTED, default=current_keep): bool,
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(
+            step_id="init", data_schema=schema, errors=errors
+        )

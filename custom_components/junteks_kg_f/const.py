@@ -19,8 +19,11 @@ ASCII_CMD_READ_MEASUREMENT = b":R50=1,2,1,\r\n"
 CONF_ADDRESS = "address"
 CONF_DEVICE_ADDR = "device_address"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_KEEP_CONNECTED = "keep_connected"
 DEFAULT_DEVICE_ADDR = 1
 DEFAULT_SCAN_INTERVAL = 60
+DEFAULT_KEEP_CONNECTED = False
+MIN_SHORT_CONN_INTERVAL = 15
 
 # Output / protection state mapping (Tag 0xD0 / :r50[10])
 OUTPUT_STATES = {

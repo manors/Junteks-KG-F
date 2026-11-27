@@ -19,11 +19,15 @@
     "step": {
       "init": {
         "title": "Junteks KG-F Options",
-        "description": "Limit how frequently sensor updates are pushed to Home Assistant to reduce database writes and CPU usage.",
+        "description": "By default, BLE connects only during refresh and disconnects immediately so your phone app can still connect (minimum 15s to protect ESP32). Enable 'Keep Bluetooth connected' only if you need 1–14s high-frequency updates.",
         "data": {
-          "scan_interval": "Minimum update interval (seconds, 1-3600)"
+          "scan_interval": "Refresh interval (seconds, 1-3600)",
+          "keep_connected": "Keep Bluetooth connected (blocks phone app)"
         }
       }
+    },
+    "error": {
+      "interval_too_short": "On-demand mode requires at least 15 seconds to avoid overloading ESP32. Enable 'Keep Bluetooth connected' for faster updates."
     }
   },
   "entity": {

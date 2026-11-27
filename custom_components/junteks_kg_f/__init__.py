@@ -24,10 +24,13 @@ from .const import (
     ASCII_CMD_READ_SETTINGS,
     CHAR_NOTIFY_UUID,
     CHAR_WRITE_UUID,
+    CONF_KEEP_CONNECTED,
     CONF_SCAN_INTERVAL,
+    DEFAULT_KEEP_CONNECTED,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     HANDSHAKE_CMD_BINARY,
+    MIN_SHORT_CONN_INTERVAL,
 )
 from .protocol import JunteksData, JunteksProtocolParser
 
@@ -42,7 +45,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     scan_interval: int = entry.options.get(
         CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
     )
-    coordinator = JunteksCoordinator(hass, address, scan_interval)
+    keep_connected: bool = entry.options.get(
+        CONF_KEEP_CONNECTED, DEFAULT_KEEP_CONNECTED
+    )
+    coordinator = JunteksCoordinator(hass, address, scan_interval, keep_connected)
 
     try:
         await coordinator.async_config_entry_first_refresh()
@@ -59,12 +65,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_options_updated(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> None:
-    """Update coordinator interval when options change without reconnecting."""
+    """Update coordinator options when changed."""
     coordinator: JunteksCoordinator = hass.data[DOMAIN][entry.entry_id]
     scan_interval: int = entry.options.get(
         CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
     )
-    coordinator.set_scan_interval(scan_interval)
+    keep_connected: bool = entry.options.get(
+        CONF_KEEP_CONNECTED, DEFAULT_KEEP_CONNECTED
+    )
+    await coordinator.async_set_options(scan_interval, keep_connected)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -84,31 +93,58 @@ class JunteksCoordinator(DataUpdateCoordinator[JunteksData]):
         hass: HomeAssistant,
         address: str,
         scan_interval: int = DEFAULT_SCAN_INTERVAL,
+        keep_connected: bool = DEFAULT_KEEP_CONNECTED,
     ) -> None:
+        effective_interval = (
+            scan_interval
+            if keep_connected
+            else max(MIN_SHORT_CONN_INTERVAL, scan_interval)
+        )
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}_{address}",
-            update_interval=timedelta(seconds=max(10, scan_interval)),
+            update_interval=timedelta(seconds=effective_interval),
         )
         self.address = address
         self.parser = JunteksProtocolParser()
         self._client: BleakClient | None = None
         self._connect_lock = asyncio.Lock()
         self._rx_event = asyncio.Event()
+        self._keep_connected = keep_connected
         self._min_push_interval = scan_interval
         self._last_push_time = 0.0
+        self._consecutive_failures = 0
 
-    def set_scan_interval(self, scan_interval: int) -> None:
-        """Update the minimum state push / poll interval in seconds."""
+    async def async_set_options(
+        self, scan_interval: int, keep_connected: bool
+    ) -> None:
+        """Update scan interval and connection mode."""
         self._min_push_interval = scan_interval
-        self.update_interval = timedelta(seconds=max(10, scan_interval))
-        _LOGGER.debug("Updated scan_interval to %ss", scan_interval)
+        self._keep_connected = keep_connected
+        effective_interval = (
+            scan_interval
+            if keep_connected
+            else max(MIN_SHORT_CONN_INTERVAL, scan_interval)
+        )
+        self.update_interval = timedelta(seconds=effective_interval)
+        _LOGGER.debug(
+            "Updated options: scan_interval=%ss, keep_connected=%s",
+            effective_interval,
+            keep_connected,
+        )
+        if not keep_connected:
+            await self.async_shutdown()
+        else:
+            await self.async_request_refresh()
 
     @callback
     def _on_disconnected(self, client: BleakClient) -> None:
         """Handle BLE disconnection."""
-        _LOGGER.warning("Disconnected from Junteks KG-F (%s)", self.address)
+        if self._keep_connected:
+            _LOGGER.warning("Disconnected from Junteks KG-F (%s)", self.address)
+        else:
+            _LOGGER.debug("Disconnected from Junteks KG-F (%s)", self.address)
         self._client = None
 
     @callback
@@ -117,42 +153,43 @@ class JunteksCoordinator(DataUpdateCoordinator[JunteksData]):
         events = self.parser.feed(bytes(data))
         if events:
             self._rx_event.set()
-            now = time.monotonic()
-            if now - self._last_push_time >= self._min_push_interval:
-                self._last_push_time = now
-                self.async_set_updated_data(self.parser.data)
+            if self._keep_connected:
+                now = time.monotonic()
+                if now - self._last_push_time >= self._min_push_interval:
+                    self._last_push_time = now
+                    self.async_set_updated_data(self.parser.data)
 
-    async def _ensure_connected(self) -> BleakClient:
-        """Ensure BLE connection is active and notifications are subscribed."""
-        if self._client and self._client.is_connected:
-            return self._client
-
-        async with self._connect_lock:
-            if self._client and self._client.is_connected:
-                return self._client
-
-            ble_device = bluetooth.async_ble_device_from_address(
-                self.hass, self.address, connectable=True
-            )
-            if not ble_device:
-                raise UpdateFailed(
-                    f"Device {self.address} not found via Bluetooth/ESP32 Proxy"
-                )
-
-            _LOGGER.debug("Connecting to Junteks KG-F at %s", self.address)
-            client = await establish_connection(
-                BleakClient,
-                ble_device,
-                self.address,
-                disconnected_callback=self._on_disconnected,
+    async def _connect_and_handshake(self) -> BleakClient:
+        """Connect to device, subscribe to notifications, and send handshake."""
+        ble_device = bluetooth.async_ble_device_from_address(
+            self.hass, self.address, connectable=True
+        )
+        if not ble_device:
+            raise UpdateFailed(
+                f"Device {self.address} not found via Bluetooth/ESP32 Proxy"
             )
 
-            try:
-                await client.start_notify(CHAR_NOTIFY_UUID, self._on_notify)
-                _LOGGER.debug("Subscribed to notify characteristic %s", CHAR_NOTIFY_UUID)
-                await asyncio.sleep(0.5)
+        _LOGGER.debug("Connecting to Junteks KG-F at %s", self.address)
+        client = await establish_connection(
+            BleakClient,
+            ble_device,
+            self.address,
+            disconnected_callback=self._on_disconnected,
+        )
 
-                self._rx_event.clear()
+        try:
+            await client.start_notify(CHAR_NOTIFY_UUID, self._on_notify)
+            _LOGGER.debug("Subscribed to notify characteristic %s", CHAR_NOTIFY_UUID)
+            await asyncio.sleep(0.3)
+
+            self._rx_event.clear()
+            if self.parser.data.protocol_mode == "ascii":
+                for cmd in (ASCII_CMD_READ_SETTINGS, ASCII_CMD_READ_MEASUREMENT):
+                    await client.write_gatt_char(
+                        CHAR_WRITE_UUID, cmd, response=False
+                    )
+                    await asyncio.sleep(0.2)
+            else:
                 _LOGGER.debug(
                     "Sending binary handshake: %s",
                     HANDSHAKE_CMD_BINARY.hex(" ").upper(),
@@ -161,12 +198,14 @@ class JunteksCoordinator(DataUpdateCoordinator[JunteksData]):
                     CHAR_WRITE_UUID, HANDSHAKE_CMD_BINARY, response=False
                 )
 
-                # Wait briefly to see if device responds in binary mode
-                try:
-                    await asyncio.wait_for(self._rx_event.wait(), timeout=3.0)
-                except asyncio.TimeoutError:
+            try:
+                await asyncio.wait_for(self._rx_event.wait(), timeout=2.5)
+                # Give device a brief window to finish multi-packet telemetry/settings
+                await asyncio.sleep(0.35)
+            except asyncio.TimeoutError:
+                if self.parser.data.protocol_mode == "unknown":
                     _LOGGER.info(
-                        "No binary response within 3s from %s; probing ASCII RS485 protocol",
+                        "No binary response within 2.5s from %s; probing ASCII RS485 protocol",
                         self.address,
                     )
                     for cmd in (
@@ -180,54 +219,113 @@ class JunteksCoordinator(DataUpdateCoordinator[JunteksData]):
                         await asyncio.sleep(0.25)
 
                     try:
-                        await asyncio.wait_for(self._rx_event.wait(), timeout=3.0)
+                        await asyncio.wait_for(self._rx_event.wait(), timeout=2.5)
+                        await asyncio.sleep(0.35)
                     except asyncio.TimeoutError:
                         _LOGGER.warning(
-                            "Connected to %s but received no valid frames yet",
+                            "Connected to %s but received no valid frames",
                             self.address,
                         )
-            except Exception:
-                await client.disconnect()
-                raise
+        except Exception:
+            await self._safe_disconnect(client)
+            raise
 
-            self._client = client
-            return client
+        return client
+
+    async def _safe_disconnect(self, client: BleakClient | None) -> None:
+        """Stop notifications and disconnect safely."""
+        if not client:
+            return
+        try:
+            if client.is_connected:
+                try:
+                    await client.stop_notify(CHAR_NOTIFY_UUID)
+                except BleakError:
+                    pass
+                await client.disconnect()
+        except BleakError as err:
+            _LOGGER.debug("Error during disconnect from %s: %s", self.address, err)
 
     async def _async_update_data(self) -> JunteksData:
-        """Keep connection alive and poll if in ASCII mode."""
-        try:
-            client = await self._ensure_connected()
-            if self.parser.data.protocol_mode == "ascii":
-                await client.write_gatt_char(
-                    CHAR_WRITE_UUID, ASCII_CMD_READ_MEASUREMENT, response=False
-                )
-                await asyncio.sleep(0.3)
-        except (BleakError, TimeoutError, OSError) as err:
-            self._client = None
-            raise UpdateFailed(f"BLE communication error: {err}") from err
+        """Fetch data using on-demand short connection or keep-alive connection."""
+        async with self._connect_lock:
+            if self._keep_connected:
+                try:
+                    if not (self._client and self._client.is_connected):
+                        self._client = await self._connect_and_handshake()
+                    elif self.parser.data.protocol_mode == "ascii":
+                        await self._client.write_gatt_char(
+                            CHAR_WRITE_UUID,
+                            ASCII_CMD_READ_MEASUREMENT,
+                            response=False,
+                        )
+                        await asyncio.sleep(0.3)
+                    self._consecutive_failures = 0
+                except (BleakError, TimeoutError, OSError, UpdateFailed) as err:
+                    self._client = None
+                    raise UpdateFailed(f"BLE communication error: {err}") from err
+                return self.parser.data
+
+            # Short-connection (on-demand) mode: connect -> fetch -> disconnect immediately
+            client: BleakClient | None = None
+            try:
+                client = await self._connect_and_handshake()
+                self._consecutive_failures = 0
+            except (BleakError, TimeoutError, OSError, UpdateFailed) as err:
+                self._consecutive_failures += 1
+                # Allow temporary failures (e.g. phone app is currently connected)
+                # without turning entities unavailable immediately.
+                if (
+                    self.parser.data.protocol_mode != "unknown"
+                    and self._consecutive_failures < 3
+                ):
+                    _LOGGER.warning(
+                        "Unable to connect to %s (attempt %d/3, possibly in use by another device): %s",
+                        self.address,
+                        self._consecutive_failures,
+                        err,
+                    )
+                    return self.parser.data
+                raise UpdateFailed(f"BLE communication error: {err}") from err
+            finally:
+                await self._safe_disconnect(client)
+                self._client = None
 
         return self.parser.data
 
     async def async_send_command(self, binary_cmd: bytes, ascii_cmd: bytes) -> None:
-        """Send a control command to the device using the active protocol."""
-        client = await self._ensure_connected()
+        """Send a control command to the device and release connection if short-conn mode."""
         cmd = (
             ascii_cmd
             if self.parser.data.protocol_mode == "ascii"
             else binary_cmd
         )
         _LOGGER.debug("BLE TX (%d bytes): %s", len(cmd), cmd.hex(" ").upper())
-        self._last_push_time = 0.0
-        await client.write_gatt_char(CHAR_WRITE_UUID, cmd, response=False)
-        await asyncio.sleep(0.2)
-        await self.async_request_refresh()
+
+        async with self._connect_lock:
+            if self._keep_connected:
+                if not (self._client and self._client.is_connected):
+                    self._client = await self._connect_and_handshake()
+                self._last_push_time = 0.0
+                await self._client.write_gatt_char(
+                    CHAR_WRITE_UUID, cmd, response=False
+                )
+                await asyncio.sleep(0.4)
+                self.async_set_updated_data(self.parser.data)
+                return
+
+            client: BleakClient | None = None
+            try:
+                client = await self._connect_and_handshake()
+                self._rx_event.clear()
+                await client.write_gatt_char(CHAR_WRITE_UUID, cmd, response=False)
+                await asyncio.sleep(0.5)
+                self.async_set_updated_data(self.parser.data)
+            finally:
+                await self._safe_disconnect(client)
+                self._client = None
 
     async def async_shutdown(self) -> None:
         """Disconnect cleanly on unload."""
-        if self._client and self._client.is_connected:
-            try:
-                await self._client.stop_notify(CHAR_NOTIFY_UUID)
-            except BleakError:
-                pass
-            await self._client.disconnect()
+        await self._safe_disconnect(self._client)
         self._client = None
