@@ -226,24 +226,31 @@ class JunteksCoordinator(DataUpdateCoordinator[JunteksData]):
                             "Connected to %s but received no valid frames",
                             self.address,
                         )
-        except Exception:
+        except BaseException:
             await self._safe_disconnect(client)
             raise
 
         return client
 
     async def _safe_disconnect(self, client: BleakClient | None) -> None:
-        """Stop notifications and disconnect safely."""
+        """Disconnect safely and ensure BLE slot is released."""
         if not client:
             return
         try:
-            if client.is_connected:
-                try:
-                    await client.stop_notify(CHAR_NOTIFY_UUID)
-                except BleakError:
-                    pass
-                await client.disconnect()
-        except BleakError as err:
+            _LOGGER.debug(
+                "Releasing BLE connection to %s (is_connected=%s)",
+                self.address,
+                client.is_connected,
+            )
+            await asyncio.wait_for(client.disconnect(), timeout=5.0)
+            _LOGGER.debug(
+                "BLE connection released for %s (is_connected=%s)",
+                self.address,
+                client.is_connected,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
             _LOGGER.debug("Error during disconnect from %s: %s", self.address, err)
 
     async def _async_update_data(self) -> JunteksData:
